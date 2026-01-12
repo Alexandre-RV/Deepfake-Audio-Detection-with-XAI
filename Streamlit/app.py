@@ -1,34 +1,31 @@
 import streamlit as st
-import pandas as pd
+import os
 import numpy as np
 import librosa
-import os
-from tensorflow.keras.models import load_model
 import librosa.display
 import matplotlib.pyplot as plt
-from keras.preprocessing.image import load_img, img_to_array
-import tensorflow as tf
-from keras.layers import TFSMLayer
 from keras.models import Sequential
-from keras.applications.mobilenet import preprocess_input
+from keras.layers import TFSMLayer
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+import tensorflow as tf
+from skimage.segmentation import mark_boundaries
+import cv2
 import lime
 from lime import lime_image
-from skimage.segmentation import mark_boundaries
-from skimage.util import img_as_float
-import cv2
-import time
 
 os.makedirs("audio_files", exist_ok=True)
 st.set_page_config(page_title="Deepfake Audio Detection", page_icon="")
 
 class_names = ['real', 'fake']
 
+# --- File handling ---
 def save_file(sound_file):
     path = os.path.join('audio_files/', sound_file.name)
     with open(path, 'wb') as f:
         f.write(sound_file.getbuffer())
     return sound_file.name
 
+# --- Spectrogram ---
 def create_spectrogram(sound):
     audio_file = os.path.join('audio_files/', sound)
     fig = plt.figure()
@@ -44,32 +41,39 @@ def create_spectrogram(sound):
     st.image(image_data)
     return image_data
 
+# --- Preprocessing ---
 def preprocess_image(image_data):
-    """Convert PIL image to tensor for TFSMLayer"""
     img_array = img_to_array(image_data)
-    img_array = np.expand_dims(img_array, axis=0)  # add batch dimension
+    img_array = np.expand_dims(img_array, axis=0)  # batch dimension
     img_array = img_array / 255.0  # normalize
     return tf.convert_to_tensor(img_array, dtype=tf.float32)
 
+# --- Load model for inference only ---
 def load_inference_model(saved_model_path='saved_model/model'):
-    """Wrap TFSMLayer in Sequential so we can use .predict()"""
-    layer = TFSMLayer(saved_model_path, call_endpoint='serving_default')
+    """
+    Load SavedModel as inference-only using TFSMLayer (Keras 3 compatible).
+    """
+    layer = TFSMLayer(saved_model_path, call_endpoint='serving_default', trainable=False)
     model = Sequential([layer])
     return model
 
+# --- Predictions ---
 def predictions(image_data, model):
     x = preprocess_image(image_data)
     prediction = model.predict(x)
     class_label = np.argmax(prediction)
     return class_label, prediction
 
+# --- LIME explanation ---
 def lime_predict(image_data, model):
     x = preprocess_image(image_data)
-    explainer = lime.lime_image.LimeImageExplainer()
+    explainer = lime_image.LimeImageExplainer()
     img_array = np.array(image_data)
-    explanation = explainer.explain_instance(img_array.astype('float64'),
-                                             lambda imgs: model.predict(np.array(imgs)/255.0),
-                                             hide_color=0, num_samples=1000)
+    explanation = explainer.explain_instance(
+        img_array.astype('float64'),
+        lambda imgs: model.predict(np.array(imgs)/255.0),
+        hide_color=0, num_samples=1000
+    )
     class_label = np.argmax(model.predict(x))
     fig, axs = plt.subplots(1, 2, figsize=(10, 25))
     temp, mask = explanation.get_image_and_mask(class_label, positive_only=False, num_features=8, hide_rest=True)
@@ -80,12 +84,13 @@ def lime_predict(image_data, model):
     st.pyplot(fig)
     return fig
 
+# --- Grad-CAM explanation ---
 def grad_predict(image_data, model, class_idx):
     img_array = img_to_array(image_data)
     x = np.expand_dims(img_array, axis=0) / 255.0
     x = tf.convert_to_tensor(x, dtype=tf.float32)
 
-    # Using VGG16 for Grad-CAM (example)
+    # Example using VGG16 (replace with your own if needed)
     base_model = tf.keras.applications.VGG16(weights='imagenet', include_top=True)
     last_conv_layer = base_model.get_layer('block5_conv3')
     grad_model = tf.keras.models.Model([base_model.inputs], [last_conv_layer.output, base_model.output])
@@ -112,19 +117,18 @@ def grad_predict(image_data, model, class_idx):
     st.pyplot(fig1)
     return superimposed_img
 
+# --- Main ---
 def main():
     page = st.sidebar.selectbox("App Selections", ["Homepage", "About"])
     if page == "Homepage":
         st.title("Deepfake Audio Detection using XAI")
         homepage()
-    elif page == "About":
+    else:
         about()
 
 def about():
     st.title("About this work")
-    st.markdown("""
-    **Deepfake audio refers to synthetically created audio... [your description here]**
-    """)
+    st.markdown("**Deepfake audio refers to synthetically created audio...**")
 
 def homepage():
     st.write('___')
@@ -139,8 +143,10 @@ def homepage():
         sound = uploaded_file.name
         with st.spinner('Fetching Results...'):
             spec = create_spectrogram(sound)
+            # Load model (inference-only)
             model_path = os.path.join(os.path.dirname(__file__), "saved_model", "model")
             model = load_inference_model(model_path)
+
         st.write('### Classification results:')
         class_label, prediction = predictions(spec, model)
         st.write("#### The uploaded audio file is " + class_names[class_label])
@@ -157,4 +163,3 @@ def homepage():
 
 if __name__ == "__main__":
     main()
-
