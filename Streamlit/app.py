@@ -150,6 +150,7 @@ def homepage():
     st.write('___')
     st.subheader("Choose a wav file")
     uploaded_file = st.file_uploader(' ', type='wav')
+
     if uploaded_file is not None:
         st.write('### Play audio')
         audio_bytes = uploaded_file.read()
@@ -157,27 +158,38 @@ def homepage():
 
         save_file(uploaded_file)
         sound = uploaded_file.name
+
         with st.spinner('Fetching Results...'):
             spec = create_spectrogram(sound)
+
             # Load model (inference-only)
             model_path = os.path.join(os.path.dirname(__file__), "saved_model", "model")
-            model = load_inference_model(model_path)
+            predict_fn = load_inference_model(model_path)
+
+            # Preprocess image
+            x = preprocess_image(spec)
+
+            # Run prediction
+            prediction = predict_fn(x)
+            class_label = np.argmax(prediction)
 
         st.write('### Classification results:')
-        class_label, prediction = predictions(spec, model)
         st.write("#### The uploaded audio file is " + class_names[class_label])
 
         if st.button('Show XAI Metrics'):
             st.write('### XAI Metrics using LIME')
             with st.spinner('Fetching Results...'):
-                lime_predict(spec, model)
+                lime_predict(spec, predict_fn)
+
             st.write('### XAI Metrics using Grad CAM')
             with st.spinner('Fetching Results...'):
-                grad_predict(spec, model, class_label)
+                grad_predict(spec, predict_fn, class_label)
+
     else:
         st.info("Please upload a .wav file")
 
 if __name__ == "__main__":
     main()
+
 
 
