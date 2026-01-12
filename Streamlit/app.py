@@ -4,6 +4,10 @@ import numpy as np
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Lambda
+import numpy as np
 from keras.models import Sequential
 from keras.layers import TFSMLayer
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
@@ -51,10 +55,15 @@ def preprocess_image(image_data):
 # --- Load model for inference only ---
 def load_inference_model(saved_model_path='saved_model/model'):
     """
-    Load SavedModel as inference-only using TFSMLayer (Keras 3 compatible).
+    Load a TensorFlow SavedModel for inference only (Keras 3 compatible)
     """
-    layer = TFSMLayer(saved_model_path, call_endpoint='serving_default', trainable=False)
-    model = Sequential([layer])
+    loaded = tf.saved_model.load(saved_model_path)
+    infer = loaded.signatures['serving_default']
+
+    # Wrap in a Keras Sequential so you can use model.predict()
+    model = Sequential([
+        Lambda(lambda x: infer(tf.convert_to_tensor(x, dtype=tf.float32))['output_0'])
+    ])
     return model
 
 # --- Predictions ---
@@ -163,3 +172,4 @@ def homepage():
 
 if __name__ == "__main__":
     main()
+
