@@ -139,7 +139,8 @@ def homepage():
         sound = uploaded_file.name
         with st.spinner('Fetching Results...'):
             spec = create_spectrogram(sound)
-            model = load_inference_model('saved_model/model')
+            model_path = os.path.join(os.path.dirname(__file__), "saved_model", "model")
+            model = load_inference_model(model_path)
         st.write('### Classification results:')
         class_label, prediction = predictions(spec, model)
         st.write("#### The uploaded audio file is " + class_names[class_label])
@@ -156,3 +157,4 @@ def homepage():
 
 if __name__ == "__main__":
     main()
+
