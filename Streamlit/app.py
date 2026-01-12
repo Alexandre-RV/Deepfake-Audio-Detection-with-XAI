@@ -52,19 +52,26 @@ def preprocess_image(image_data):
     img_array = img_array / 255.0  # normalize
     return tf.convert_to_tensor(img_array, dtype=tf.float32)
 
-# --- Load model for inference only ---
 def load_inference_model(saved_model_path='saved_model/model'):
     """
-    Load a TensorFlow SavedModel for inference only (Keras 3 compatible)
+    Load TensorFlow SavedModel for inference (Keras 3 compatible)
     """
-    loaded = tf.saved_model.load(saved_model_path)
-    infer = loaded.signatures['serving_default']
+    loaded_model = tf.saved_model.load(saved_model_path)
 
-    # Wrap in a Keras Sequential so you can use model.predict()
-    model = Sequential([
-        Lambda(lambda x: infer(tf.convert_to_tensor(x, dtype=tf.float32))['output_0'])
-    ])
-    return model
+    # The serving_default signature contains the prediction function
+    infer = loaded_model.signatures['serving_default']
+
+    def predict_fn(x):
+        # Convert to tensor
+        x_tensor = tf.convert_to_tensor(x, dtype=tf.float32)
+        # Some SavedModels expect input key 'input_1' or similar; adjust if needed
+        key = list(infer.structured_input_signature[1].keys())[0]
+        output = infer(**{key: x_tensor})
+        # The output key may also vary; get the first key
+        output_key = list(output.keys())[0]
+        return output[output_key].numpy()
+
+    return predict_fn
 
 # --- Predictions ---
 def predictions(image_data, model):
@@ -172,4 +179,5 @@ def homepage():
 
 if __name__ == "__main__":
     main()
+
 
